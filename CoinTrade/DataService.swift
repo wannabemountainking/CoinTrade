@@ -8,7 +8,8 @@
 import Foundation
 import Combine
 
-struct CoinTrade {
+struct CoinTrade: Identifiable {
+    let id = UUID()
     let symbol: String
     let price: Double?
     let volume: Int
