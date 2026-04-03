@@ -19,7 +19,7 @@ final class CoinTradeViewModel {
     let ds = DataService()
     var overTenAfterTrades: [CoinTrade] = []
     var maxPriceTrade: CoinTrade = CoinTrade(symbol: "", price: nil, volume: 0)
-    var errorMessage: String = ""
+    var errorMessages: [String] = []
     var totalSumOfFirstThreeTradeVolume: Int = 0
     
     var cancellable = Set<AnyCancellable>()
@@ -33,37 +33,38 @@ final class CoinTradeViewModel {
     
     private func firstSubscription() {
         ds.publisher
+            .compactMap { result -> CoinTrade? in
+                if case .success(let trade) = result {
+                    return trade
+                }
+                return nil
+            }
             .drop { $0.volume < 10 }
             .collect()
-            .sink { _ in
-            } receiveValue: { [weak self] trade in
+            .sink { [weak self] trades in
                 guard let self else {return}
-                self.overTenAfterTrades = trade
+                self.overTenAfterTrades = trades
             }
             .store(in: &cancellable)
     }
     
     private func secondSubscription() {
         ds.publisher
-            .tryMax { trade1, trade2 in
-                guard let first = trade1.price else { throw TradeError.priceError(symbol: trade1.symbol) }
-                guard let second = trade2.price else { throw TradeError.priceError(symbol: trade2.symbol) }
-                return first < second
-            }
-            .sink { [weak self] completion in
-                guard let self else {return}
-                switch completion {
-                case .finished:
-                    break
+            .compactMap { [weak self] result -> CoinTrade? in
+                guard let self else {return nil}
+                switch result {
+                case .success(let trade):
+                    return trade
                 case .failure(let error):
-                    switch error as? TradeError {
+                    switch error {
                     case .priceError(let symbol):
-                        self.errorMessage = "\(symbol) 시세 오류"
-                    case .none:
-                        break
+                        self.errorMessages.append("⚠️ \(symbol) 시세 오류")
+                        return nil
                     }
                 }
-            } receiveValue: { [weak self] maxTrade in
+            }
+            .max { $0.price ?? 0 < $1.price ?? 0 }
+            .sink { [weak self] maxTrade in
                 guard let self else {return}
                 self.maxPriceTrade = maxTrade
             }
@@ -72,6 +73,12 @@ final class CoinTradeViewModel {
     
     private func thirdSubscription() {
         ds.publisher
+            .compactMap({ result -> CoinTrade? in
+                if case .success(let trade) = result {
+                    return trade
+                }
+                return nil
+            })
             .prefix(3)
             .collect()
             .sink { _ in
@@ -80,6 +87,5 @@ final class CoinTradeViewModel {
                 self.totalSumOfFirstThreeTradeVolume = trades.reduce(0, { $0 + $1.volume })
             }
             .store(in: &cancellable)
-
     }
 }

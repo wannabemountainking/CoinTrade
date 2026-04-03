@@ -16,7 +16,7 @@ struct CoinTrade: Identifiable {
 }
 
 final class DataService {
-    let publisher = PassthroughSubject<CoinTrade, Error>()
+    let publisher = PassthroughSubject<Result<CoinTrade, TradeError>, Never>()
     
     func streamingData() {
         let coinTrades = [
@@ -34,8 +34,17 @@ final class DataService {
             CoinTrade(symbol: "BNB",  price: 420,    volume: 22)
         ]
         for index in coinTrades.indices {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index)) {
-                self.publisher.send(coinTrades[index])
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.1) {
+                let trade = coinTrades[index]
+                guard trade.price != nil else {
+                    self.publisher.send(.failure(TradeError.priceError(symbol: trade.symbol)))
+                    return
+                }
+                self.publisher.send(.success(trade))
+                
+                if index == coinTrades.indices.last {
+                    self.publisher.send(completion: .finished)
+                }
             }
         }
     }
